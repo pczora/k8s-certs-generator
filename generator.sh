@@ -69,6 +69,8 @@ cat > kubernetes-csr.json <<EOF
   ]
 }
 EOF
+
+# TODO: insert correct addresses
 API_SERVER_ADDRESSES=""
 
 cfssl gencert \
@@ -158,6 +160,7 @@ for instance in worker-0 worker-1 worker-2; do
 EOF
 done
 
+#TODO: Insert correct addresses
 WORKER_EXTERNAL_IPS=(1.2.3.4 4.3.2.1 3.3.3.3)
 WORKER_INTERNAL_IPS=(10.0.0.10 10.0.0.11 10.0.0.12)
 
