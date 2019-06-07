@@ -70,14 +70,13 @@ cat > kubernetes-csr.json <<EOF
 }
 EOF
 
-# TODO: insert correct addresses
-API_SERVER_ADDRESSES=""
 
+read -p "IP Adresses (public and private) of the API servers (separated by commas, no spaces!) " apiAddresses
 cfssl gencert \
   -ca=ca.pem \
   -ca-key=ca-key.pem \
   -config=ca-config.json \
-  -hostname=127.0.0.1,10.32.0.1,kubernetes.default,$API_SERVER_ADDRESSES \
+  -hostname=127.0.0.1,10.32.0.1,kubernetes.default,${apiAddresses} \
   -profile=kubernetes \
   kubernetes-csr.json | cfssljson -bare kubernetes
 
@@ -137,12 +136,15 @@ cfssl gencert \
   -profile=kubernetes \
   kube-controller-manager-csr.json | cfssljson -bare kube-controller-manager
 
+
+read -p "Number of worker nodes " numWorkers
+read -p "Name for worker nodes " workerName
 # Generate certs for workers
 echo 'Generating certs for workers...'
-for instance in worker-0 worker-1 worker-2; do
-  cat > ${instance}-csr.json <<EOF
+for i in `seq 0 $((numWorkers-1))`; do
+  cat > ${workerName}-${i}-csr.json <<EOF
   {
-    "CN": "system:node:${instance}",
+    "CN": "system:node:${workerName}-${i}",
     "key": {
       "algo": "rsa",
       "size": 2048
@@ -160,21 +162,17 @@ for instance in worker-0 worker-1 worker-2; do
 EOF
 done
 
-#TODO: Insert correct addresses
-WORKER_EXTERNAL_IPS=(1.2.3.4 4.3.2.1 3.3.3.3)
-WORKER_INTERNAL_IPS=(10.0.0.10 10.0.0.11 10.0.0.12)
-
-for i in 0 1 2; do
-  EXTERNAL_IP=${WORKER_EXTERNAL_IPS[${i}]}
-  INTERNAL_IP=${WORKER_INTERNAL_IPS[${i}]}
-
+for i in `seq 0 $((numWorkers-1))`; do
+  workerId="${workerName}-${i}"
+  read -p "External address of ${workerId} " externalIP
+  read -p "Internal address of ${workerId} " internalIP
   cfssl gencert \
     -ca=ca.pem \
     -ca-key=ca-key.pem \
     -config=ca-config.json \
-    -hostname=worker-${i},${EXTERNAL_IP},${INTERNAL_IP} \
+    -hostname=${workerId},${externalIP},${internalIP} \
     -profile=kubernetes \
-    worker-${i}-csr.json | cfssljson -bare worker-${i}
+    ${workerId}-csr.json | cfssljson -bare ${workerId}
 done
 
 # Generate cert for kube-proxy
