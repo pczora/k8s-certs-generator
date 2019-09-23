@@ -2,9 +2,14 @@
 
 set -euo pipefail
 
+OUTPUT_DIR=output
+# Create output directory
+echo 'Creating output directory'
+mkdir -p $OUTPUT_DIR
+
 # Generate CA
 echo 'Generating CA...'
-cat > ca-config.json <<EOF
+cat > $OUTPUT_DIR/ca-config.json <<EOF
 {
   "signing": {
     "default": {
@@ -27,7 +32,7 @@ read -p "O: " o
 read -p "OU: " ou
 read -p "ST: " st
 
-cat > ca-csr.json <<EOF
+cat > $OUTPUT_DIR/ca-csr.json <<EOF
 {
   "CN": "$cacn",
   "key": {
@@ -46,12 +51,12 @@ cat > ca-csr.json <<EOF
 }
 EOF
 
-cfssl gencert -initca ca-csr.json | cfssljson -bare ca
+cfssl gencert -initca $OUTPUT_DIR/ca-csr.json | cfssljson -bare $OUTPUT_DIR/ca
 
 # Generate server cert for API-Servers
 echo 'Generating server cert for API servers...'
 
-cat > kubernetes-csr.json <<EOF
+cat > $OUTPUT_DIR/kubernetes-csr.json <<EOF
 {
   "CN": "kubernetes",
   "key": {
@@ -71,18 +76,22 @@ cat > kubernetes-csr.json <<EOF
 EOF
 
 
-read -p "IP Adresses (public and private) of the API servers (separated by commas, no spaces!) " apiAddresses
+read -p "IP adresses (public and private) of the API servers (separated by commas) " apiAddresses
+
+sanitizedApiAddresses=$(echo $apiAddresses | tr -d [:blank:])
+echo $sanitizedApiAddresses
+
 cfssl gencert \
-  -ca=ca.pem \
-  -ca-key=ca-key.pem \
-  -config=ca-config.json \
-  -hostname=127.0.0.1,10.32.0.1,kubernetes.default,${apiAddresses} \
+  -ca=$OUTPUT_DIR/ca.pem \
+  -ca-key=$OUTPUT_DIR/ca-key.pem \
+  -config=$OUTPUT_DIR/ca-config.json \
+  -hostname=127.0.0.1,10.32.0.1,kubernetes.default,${sanitizedApiAddresses} \
   -profile=kubernetes \
-  kubernetes-csr.json | cfssljson -bare kubernetes
+  $OUTPUT_DIR/kubernetes-csr.json | cfssljson -bare $OUTPUT_DIR/kubernetes
 
 # Generate cert for kube-scheduler
 echo 'Generating cert for kube-scheduler...'
-cat > kube-scheduler-csr.json <<EOF
+cat > $OUTPUT_DIR/kube-scheduler-csr.json <<EOF
 {
   "CN": "system:kube-scheduler",
   "key": {
@@ -102,15 +111,15 @@ cat > kube-scheduler-csr.json <<EOF
 EOF
 
 cfssl gencert \
-  -ca=ca.pem \
-  -ca-key=ca-key.pem \
-  -config=ca-config.json \
+  -ca=$OUTPUT_DIR/ca.pem \
+  -ca-key=$OUTPUT_DIR/ca-key.pem \
+  -config=$OUTPUT_DIR/ca-config.json \
   -profile=kubernetes \
-  kube-scheduler-csr.json | cfssljson -bare kube-scheduler
+  $OUTPUT_DIR/kube-scheduler-csr.json | cfssljson -bare $OUTPUT_DIR/kube-scheduler
 
 # Generate cert for controller-manager
 echo 'Generating cert for controller-manager...'
-cat > kube-controller-manager-csr.json <<EOF
+cat > $OUTPUT_DIR/kube-controller-manager-csr.json <<EOF
 {
   "CN": "system:kube-controller-manager",
   "key": {
@@ -130,21 +139,21 @@ cat > kube-controller-manager-csr.json <<EOF
 EOF
 
 cfssl gencert \
-  -ca=ca.pem \
-  -ca-key=ca-key.pem \
-  -config=ca-config.json \
+  -ca=$OUTPUT_DIR/ca.pem \
+  -ca-key=$OUTPUT_DIR/ca-key.pem \
+  -config=$OUTPUT_DIR/ca-config.json \
   -profile=kubernetes \
-  kube-controller-manager-csr.json | cfssljson -bare kube-controller-manager
+  $OUTPUT_DIR/kube-controller-manager-csr.json | cfssljson -bare $OUTPUT_DIR/kube-controller-manager
 
 
 read -p "Number of worker nodes " numWorkers
-read -p "Name for worker nodes " workerName
+read -p "Name prefix for worker nodes (the generated names will be '\$prefix-0 ... \$prefix-\$n-1', where \$n is the number of worker nodes) " workerNamePrefix
 # Generate certs for workers
 echo 'Generating certs for workers...'
 for i in `seq 0 $((numWorkers-1))`; do
-  cat > ${workerName}-${i}-csr.json <<EOF
+  cat > $OUTPUT_DIR/${workerNamePrefix}-${i}-csr.json <<EOF
   {
-    "CN": "system:node:${workerName}-${i}",
+    "CN": "system:node:${workerNamePrefix}-${i}",
     "key": {
       "algo": "rsa",
       "size": 2048
@@ -163,21 +172,21 @@ EOF
 done
 
 for i in `seq 0 $((numWorkers-1))`; do
-  workerId="${workerName}-${i}"
-  read -p "External address of ${workerId} " externalIP
+  workerId="${workerNamePrefix}-${i}"
   read -p "Internal address of ${workerId} " internalIP
+  read -p "External address of ${workerId} " externalIP
   cfssl gencert \
-    -ca=ca.pem \
-    -ca-key=ca-key.pem \
-    -config=ca-config.json \
+    -ca=$OUTPUT_DIR/ca.pem \
+    -ca-key=$OUTPUT_DIR/ca-key.pem \
+    -config=$OUTPUT_DIR/ca-config.json \
     -hostname=${workerId},${externalIP},${internalIP} \
     -profile=kubernetes \
-    ${workerId}-csr.json | cfssljson -bare ${workerId}
+    $OUTPUT_DIR/${workerId}-csr.json | cfssljson -bare $OUTPUT_DIR/${workerId}
 done
 
 # Generate cert for kube-proxy
 echo 'Generating cert for kube-proxy...'
-cat > kube-proxy-csr.json <<EOF
+cat > $OUTPUT_DIR/kube-proxy-csr.json <<EOF
 {
   "CN": "system:kube-proxy",
   "key": {
@@ -197,15 +206,15 @@ cat > kube-proxy-csr.json <<EOF
 EOF
 
 cfssl gencert \
-  -ca=ca.pem \
-  -ca-key=ca-key.pem \
-  -config=ca-config.json \
+  -ca=$OUTPUT_DIR/ca.pem \
+  -ca-key=$OUTPUT_DIR/ca-key.pem \
+  -config=$OUTPUT_DIR/ca-config.json \
   -profile=kubernetes \
-  kube-proxy-csr.json | cfssljson -bare kube-proxy
+  $OUTPUT_DIR/kube-proxy-csr.json | cfssljson -bare $OUTPUT_DIR/kube-proxy
 
 # Generate certs for service accounts
 echo 'Generating cert for service accounts...'
-cat > service-account-csr.json <<EOF
+cat > $OUTPUT_DIR/service-account-csr.json <<EOF
 {
   "CN": "service-accounts",
   "key": {
@@ -225,15 +234,15 @@ cat > service-account-csr.json <<EOF
 EOF
 
 cfssl gencert \
-  -ca=ca.pem \
-  -ca-key=ca-key.pem \
-  -config=ca-config.json \
+  -ca=$OUTPUT_DIR/ca.pem \
+  -ca-key=$OUTPUT_DIR/ca-key.pem \
+  -config=$OUTPUT_DIR/ca-config.json \
   -profile=kubernetes \
-  service-account-csr.json | cfssljson -bare service-account
+  $OUTPUT_DIR/service-account-csr.json | cfssljson -bare $OUTPUT_DIR/service-account
 
 # Generate client cert for admin account
 echo 'Generating cert for admin account...'
-cat > admin-csr.json <<EOF
+cat > $OUTPUT_DIR/admin-csr.json <<EOF
 {
   "CN": "admin",
   "key": {
@@ -253,10 +262,10 @@ cat > admin-csr.json <<EOF
 EOF
 
 cfssl gencert \
-  -ca=ca.pem \
-  -ca-key=ca-key.pem \
-  -config=ca-config.json \
+  -ca=$OUTPUT_DIR/ca.pem \
+  -ca-key=$OUTPUT_DIR/ca-key.pem \
+  -config=$OUTPUT_DIR/ca-config.json \
   -profile=kubernetes \
-  admin-csr.json | cfssljson -bare admin
+  $OUTPUT_DIR/admin-csr.json | cfssljson -bare $OUTPUT_DIR/admin
 
 
